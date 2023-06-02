@@ -1,0 +1,11 @@
+
+driver.m runs the physics model represent by eqn (1)  of [1]
+
+numerically solve for eqn (1) using the ETD scheme in eqn (1) of [2]
+
+evaluate the performance benefit
+
+References
+==========
+[1] https://arxiv.org/pdf/2206.12509.pdf
+[2] https://www.sciencedirect.com/science/article/pii/S0377042715004690
