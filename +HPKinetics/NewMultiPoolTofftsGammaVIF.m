@@ -1,4 +1,4 @@
-classdef NewMultiPoolTofftsGammaVIF < HPKinetics.MultiPoolToffts
+classdef NewMultiPoolTofftsGammaVIF_Edit2 < HPKinetics.MultiPoolToffts
     %MULTIPOOLTOFFTSGAMMAVIF A chemical exchange model assuming two pooled
     %Tofts model of perfusion
     %   parameters Values
@@ -111,40 +111,70 @@ classdef NewMultiPoolTofftsGammaVIF < HPKinetics.MultiPoolToffts
             
             Mz = zeros(size(FaList));
             Mxy = zeros(size(FaList));
+
+% first step
+             Mz(:,1) = M0.*cos(FaList(:,1)); %first step -> 2 numbers? 2 bounds? z is input i guess
+             Mxy(:,1) = (params.ve*M0+(1-params.ve)*params.b(TRList(1))).*sin(FaList(:,1)); %Mxy is output i guess
+             %more new things on first step yay :))
+             %v1 = Mxy %should be the "boundary condition" but it may not be used
+             
+              A_inv = inv(A); %New
+              I = eye(size(A)); %New
+              C = [params.FaList(1, 1), 0; 0, params.FaList(2, 2)];
+              VIF = getVIF(self, params); %uhh may need to change this
+              k = 1; %This is not mentioned in the arxiv paper I think
+        
+              MDAnderson2023REU = true;
+              if MDAnderson2023REU
+                  MDfunc = @(y) 6.684 * exp(-((y - 12.97)/8.074).^2) %Manually CF tooled to get this from VIF
+                  %need to make sure this is 2 rows as well
+                  for i = 2:N
+                      j = 3*i; %For the TR_list type of deal, will change to pull from TR_List later
+                      v_star = C.*expm(-1*A*k).*ve + kve.'/ve .*A_inv.*(I - expm(-1.*A.*k)).*MDfunc(Mz(:, i-1)); %New, suppress later; changed VIF(:, i) -> MDfunc(i)
+                      v1 = C.*expm(-1*A*k).*ve + kve.'/ve .*A_inv.*(I - expm(-1.*A.*k)).*MDfunc(Mz(:, i-1)) + A_inv^2./k .*(k.*A - I + expm(-1.*A.*k)).*(MDfunc(v_star)- MDfunc(Mz(:, i-1))); %New, "i-1" on MDfunc(v1(i-1) kinda iffy
+                      v1_flat = [v1(1, 1); v1(2, 2)];
+                      Mz(:, i) = v1_flat; %change this to be "flat" before inserting...
+                      Mxy(:, i) = sin(FaList(:,i)).*(params.ve.*Mz(:,i)+...
+                            (1-params.ve).*b(TRList(i)));
+                      Mz(:,i) = cos(FaList(:,i)).*Mz(:,i);% New, ends here
+                  end 
+              end
+
+
             
-            % first step
-            Mz(:,1) = M0.*cos(FaList(:,1));
-            Mxy(:,1) = (params.ve*M0+(1-params.ve)*params.b(TRList(1))).*sin(FaList(:,1));
-            
-            walkermethod = true; % <-- ode45 is faster than using integral in second method
-            if walkermethod
-                fun = @(t,y)A*y+(kve.'/ve).*b(t);
-                for i = 2:N
-                    [~,Y] = ode45(fun,[TRList(i-1),TRList(i)],Mz(:,i-1));
-                    Mz(:,i) = Y(end,:)';
-                    Mxy(:,i) = sin(FaList(:,i)).*(params.ve.*Mz(:,i)+...
-                        (1-params.ve).*b(TRList(i)));
-                    Mz(:,i) = cos(FaList(:,i)).*Mz(:,i);
-                end
-            else
-                % compute TRs from TRList
-                TR = zeros(N,1);
-                TR(1) = TRList(1);
-                for i = 2:N
-                    TR(i) = TRList(i) - TRList(i-1);
-                end
-                
-                fun = @(t,tk) expm((tk - t)*A)*b(t);
-                for i = 2:N
-                    ti = TRList(i);
-                    tim = TRList(i-1);
-                    
-                    Mz(:,i) = expm(TR(i)*A)*Mz(:,i-1) + (kve.'/ve).*integral(@(x) fun(x,ti), tim, ti,'ArrayValued',true,'RelTol',1e-6);
-                    Mxy(:,i) = sin(FaList(:,i)).*(params.ve.*Mz(:,i)+...
-                        (1-params.ve).*b(TRList(i)));
-                    Mz(:,i) = cos(FaList(:,i)).*Mz(:,i);
-                end
-            end
+%            % first step
+%           Mz(:,1) = M0.*cos(FaList(:,1));
+%          Mxy(:,1) = (params.ve*M0+(1-params.ve)*params.b(TRList(1))).*sin(FaList(:,1));
+%            
+%            walkermethod = true; % <-- ode45 is faster than using integral in second method
+%            if walkermethod
+%                fun = @(t,y)A*y+(kve.'/ve).*b(t);
+%                for i = 2:N
+%                    [~,Y] = ode45(fun,[TRList(i-1),TRList(i)],Mz(:,i-1));
+%                    Mz(:,i) = Y(end,:)';
+%                    Mxy(:,i) = sin(FaList(:,i)).*(params.ve.*Mz(:,i)+...
+%                        (1-params.ve).*b(TRList(i)));
+%                    Mz(:,i) = cos(FaList(:,i)).*Mz(:,i);
+%                end
+%            else
+%                % compute TRs from TRList
+%                TR = zeros(N,1);
+%                TR(1) = TRList(1);
+%                for i = 2:N
+%                    TR(i) = TRList(i) - TRList(i-1);
+%                end
+%                
+%                fun = @(t,tk) expm((tk - t)*A)*b(t);
+%                for i = 2:N
+%                    ti = TRList(i);
+%                    tim = TRList(i-1);
+%                   
+%                    Mz(:,i) = expm(TR(i)*A)*Mz(:,i-1) + (kve.'/ve).*integral(@(x) fun(x,ti), tim, ti,'ArrayValued',true,'RelTol',1e-6);
+%                    Mxy(:,i) = sin(FaList(:,i)).*(params.ve.*Mz(:,i)+...
+%                        (1-params.ve).*b(TRList(i)));
+%                    Mz(:,i) = cos(FaList(:,i)).*Mz(:,i);
+%                end
+%            end
          end
          
          function [TRList, Mxy, Mz, G, dGdTR, dGdFA] = evaluate_der(self,TRList,FaList,M0,A,b,params)
