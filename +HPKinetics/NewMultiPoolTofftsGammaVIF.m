@@ -1,4 +1,4 @@
-classdef NewMultiPoolTofftsGammaVIF < HPKinetics.MultiPoolToffts
+classdef NewMultiPoolTofftsGammaVIF_Edit_4 < HPKinetics.MultiPoolToffts
     %MULTIPOOLTOFFTSGAMMAVIF A chemical exchange model assuming two pooled
     %Tofts model of perfusion
     %   parameters Values
@@ -113,38 +113,99 @@ classdef NewMultiPoolTofftsGammaVIF < HPKinetics.MultiPoolToffts
             Mxy = zeros(size(FaList));
             
             % first step
-            Mz(:,1) = M0.*cos(FaList(:,1));
-            Mxy(:,1) = (params.ve*M0+(1-params.ve)*params.b(TRList(1))).*sin(FaList(:,1));
-            
-            walkermethod = true; % <-- ode45 is faster than using integral in second method
-            if walkermethod
-                fun = @(t,y)A*y+(kve.'/ve).*b(t);
-                for i = 2:N
-                    [~,Y] = ode45(fun,[TRList(i-1),TRList(i)],Mz(:,i-1));
-                    Mz(:,i) = Y(end,:)';
-                    Mxy(:,i) = sin(FaList(:,i)).*(params.ve.*Mz(:,i)+...
-                        (1-params.ve).*b(TRList(i)));
-                    Mz(:,i) = cos(FaList(:,i)).*Mz(:,i);
-                end
-            else
-                % compute TRs from TRList
-                TR = zeros(N,1);
-                TR(1) = TRList(1);
-                for i = 2:N
-                    TR(i) = TRList(i) - TRList(i-1);
-                end
-                
-                fun = @(t,tk) expm((tk - t)*A)*b(t);
-                for i = 2:N
-                    ti = TRList(i);
-                    tim = TRList(i-1);
-                    
-                    Mz(:,i) = expm(TR(i)*A)*Mz(:,i-1) + (kve.'/ve).*integral(@(x) fun(x,ti), tim, ti,'ArrayValued',true,'RelTol',1e-6);
-                    Mxy(:,i) = sin(FaList(:,i)).*(params.ve.*Mz(:,i)+...
-                        (1-params.ve).*b(TRList(i)));
-                    Mz(:,i) = cos(FaList(:,i)).*Mz(:,i);
-                end
-            end
+              Mz(:,1) = M0.*cos(FaList(:,1)); %first step -> 2 numbers? 2 bounds? z is input i guess
+              Mxy(:,1) = (params.ve*M0+(1-params.ve)*params.b(TRList(1))).*sin(FaList(:,1)); %Mxy is output i guess
+              %more new things on first step yay :))
+              %v1 = Mxy %should be the "boundary condition" but it may not be used
+              
+               A_inv = inv(A); %New
+               I = eye(size(A)); %New
+               C = [FaList(1, 1), 0; 0, FaList(2, 2)];
+               VIF = getVIF(self, params); %uhh may need to change this
+               k = 1.7; %This is not mentioned in the arxiv paper I think
+               M_debug = zeros(size(FaList));
+               v_star_list = zeros(size(FaList));
+               FaList;
+         
+               MDAnderson2023REU = true;
+               if MDAnderson2023REU
+                    a1 =       6.635;  %(1.264, 9.064), OG 6.684
+                    b1 =        9.946;  %(6.673, 7.788), OG 12.97
+                    c1 =       8.224;  %(3.023, 6.385), OG 8.074
+                    %a2 =       3.655;  %(2.008, 5.302)
+                    %b2 =       14.27;  %(8.359, 20.18)
+                    %c2 =       8.672;  %(4.639, 12.7)
+                   %MDfunc = @(y) 6.684 * exp(-((y - 12.97)/8.074).^2); %Manually CF tooled to get this from VIF
+                   MDfunc = @(y) a1* exp(-((y - b1)/c1).^2); % + a2*exp(-((y - b2)/c2).^2);
+                   %Bounds: (6.0, 7.366), (12.29, 13.64), (7.117, 9.031)
+                   kve = [0.05, 0.05]; %This is just here because the original kve was [0.05, 0]
+                   %v1_debug = zeros(size(FaList));
+ 
+                   for i = 2:N
+                       j = 3*i; %For the TR_list type of deal, will change to pull from TR_List later
+                       v_star_1 = Mz(:, i-1).*C.*expm(-1.*A.*k).*ve; 
+                       v_star_2 = kve.'/ve .*A_inv.*(I - expm(-1.*A.*k)).*MDfunc(j); %MDfunc(Mz(:, i-1));
+                       v_star = v_star_1 + v_star_2;
+                       
+                       %v_star_1_flat = [v_star_1(1, 1); v_star_1(2, 2)];
+                       %v_star_2_flat = [v_star_2(1, 1); v_star_2(2, 2)];
+                       %v_star_list([1 2], i) = v_star_1_flat;
+                       %v_star_list([3 4], i) = v_star_2_flat;
+
+                       v1_1 = Mz(:, i-1).*C.*expm(-1*A*k).*ve;   
+                       v1_2 = kve.'/ve .*A_inv.*(I - expm(-1.*A.*k)).*MDfunc(j); %MDfunc(Mz(:, i-1));    
+                       v1_3 = A_inv^2./k .*(k.*A - I + expm(-1.*A.*k)).*(MDfunc(v_star)- MDfunc(Mz(:, i-1)));
+
+                       %v1_1_flat = [v1_1(1, 1); v1_1(2, 2)];
+                       %v1_2_flat = [v1_2(1, 1); v1_2(2, 2)];
+                       %v1_3_flat = [v1_3(1,1); v1_3(2, 2)];
+                       %v1_debug([1 2], i)= v1_1_flat;
+                       %v1_debug([3 4], i) = v1_2_flat;
+                       %v1_debug([5 6], i) = v1_3_flat;
+                       v1 = v1_1 + v1_2 + v1_3;
+                       v1_flat = [v1(1, 1); v1(2, 2)];
+
+                       M_debug(:, i) = v1_flat; %change this to be "flat" before inserting...
+                       Mxy(:, i) = sin(FaList(:,i)).*(params.ve.*M_debug(:,i)+...
+                             (1-params.ve).*b(TRList(i))); %Mz -> M_debug
+                       Mz(:,i) = cos(FaList(:,i)).*M_debug(:,i);% New, ends here
+                       
+                   end
+                   %M_debug;
+                   %v1_debug;
+                   %v_star_list;
+               end
+
+
+                walkermethod = false; % <-- ode45 is faster than using integral in second method
+                if walkermethod
+                    fun = @(t,y)A*y+(kve.'/ve).*b(t);
+                    for i = 2:N
+                        [~,Y] = ode45(fun,[TRList(i-1),TRList(i)],Mz(:,i-1));
+                        Mz(:,i) = Y(end,:)';
+                        Mxy(:,i) = sin(FaList(:,i)).*(params.ve.*Mz(:,i)+...
+                            (1-params.ve).*b(TRList(i)));
+                        Mz(:,i) = cos(FaList(:,i)).*Mz(:,i);
+                    end
+%                else
+                    % compute TRs from TRList
+%                    TR = zeros(N,1);
+%                    TR(1) = TRList(1);
+%                    for i = 2:N
+%                        TR(i) = TRList(i) - TRList(i-1);
+%                    end
+%                    
+%                    fun = @(t,tk) expm((tk - t)*A)*b(t);
+%                    for i = 2:N
+%                        ti = TRList(i);
+%                        tim = TRList(i-1);
+%                        
+%                        Mz(:,i) = expm(TR(i)*A)*Mz(:,i-1) + (kve.'/ve).*integral(@(x) fun(x,ti), tim, ti,'ArrayValued',true,'RelTol',1e-6);
+%                        Mxy(:,i) = sin(FaList(:,i)).*(params.ve.*Mz(:,i)+...
+%                            (1-params.ve).*b(TRList(i)));
+%                        Mz(:,i) = cos(FaList(:,i)).*Mz(:,i);
+                   end
+%                end
          end
          
          function [TRList, Mxy, Mz, G, dGdTR, dGdFA] = evaluate_der(self,TRList,FaList,M0,A,b,params)
