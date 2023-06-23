@@ -49,7 +49,7 @@ clc
       'scaleFactor',VIF_scale_fact,'T1s',[T1pmean(1),T1lmean(1)],'ExchangeTerms',[0,kplmean(1) ;0,0],...
       'TRList',TR_list,'PerfusionTerms',[kvemean(1),0],'volumeFractions',ve,...
       'fitOptions', opts)
-  model = HPKinetics.NewMultiPoolTofftsGammaVIF_Edit();
+  model = HPKinetics.NewMultiPoolTofftsGammaVIF_Edit_4();
   
   
   %% Get true Mz
